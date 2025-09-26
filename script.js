@@ -12,10 +12,22 @@ let placedRacks = {}; // Stores racks placed in rooms
 let placedMiners = {}; // Stores miners placed in racks
 
 // --- Constants for Image Paths ---
-// Updated IMAGES_BASE_URL to point to your GitHub repository's raw content
 const GITHUB_RAW_CONTENT_BASE = 'https://raw.githubusercontent.com/WhoCares19/whocares19.github.io/main/';
-const IMAGES_BASE_URL = GITHUB_RAW_CONTENT_BASE;
 const LEVELS_BASE_URL = `${GITHUB_RAW_CONTENT_BASE}Levels/`;
+
+// Define the miner image subfolders. The script will search these.
+const MINER_IMAGE_SUBFOLDERS = [
+    'miners/miners1/',
+    'miners/miners2/',
+    'miners/miners3/',
+    'miners/miners4/',
+    'miners/miners5/',
+    'miners/miners6/',
+    'miners/miners7/',
+    'miners/miners8/'
+];
+
+const MINER_IMAGE_CACHE = {}; // Cache to store resolved miner image URLs
 
 // --- Utility Functions ---
 
@@ -61,6 +73,38 @@ async function parseCSV(url) {
             return obj;
         }, {});
     });
+}
+
+/**
+ * Asynchronously searches for a miner's image across predefined folders.
+ * Caches the result to avoid repeated lookups.
+ * @param {string} minerName The name of the miner.
+ * @returns {Promise<string>} The URL of the miner's image or a default fallback.
+ */
+async function getMinerImageUrl(minerName) {
+    if (MINER_IMAGE_CACHE[minerName]) {
+        return MINER_IMAGE_CACHE[minerName];
+    }
+
+    const defaultImageUrl = `${GITHUB_RAW_CONTENT_BASE}miners/default/default_miner.png`; // Fallback image if not found
+
+    for (const subfolder of MINER_IMAGE_SUBFOLDERS) {
+        const imageUrl = `${GITHUB_RAW_CONTENT_BASE}${subfolder}${minerName.replace(/ /g, '_')}.png`; // Replace spaces for filenames
+        try {
+            const response = await fetch(imageUrl, { method: 'HEAD' }); // Use HEAD to check if resource exists
+            if (response.ok) {
+                MINER_IMAGE_CACHE[minerName] = imageUrl;
+                return imageUrl;
+            }
+        } catch (error) {
+            // Network error or CORS issue, continue trying other paths
+            console.warn(`Failed to fetch HEAD for ${imageUrl}: ${error.message}`);
+        }
+    }
+
+    // If no image is found in any specified folder, use a default
+    MINER_IMAGE_CACHE[minerName] = defaultImageUrl;
+    return defaultImageUrl;
 }
 
 // --- UI Rendering Functions ---
@@ -166,7 +210,7 @@ function selectRoom(roomId) {
     calculateTotalPower();
 }
 
-function renderInventory() {
+async function renderInventory() {
     const inventoryItemsContainer = document.getElementById('inventory-items');
     inventoryItemsContainer.innerHTML = ''; // Clear previous items
 
@@ -214,7 +258,7 @@ function renderInventory() {
         });
     }
 
-    itemsToRender.forEach(item => {
+    for (const item of itemsToRender) {
         const itemDiv = document.createElement('div');
         itemDiv.classList.add('inventory-item');
         itemDiv.dataset.type = inventoryMode === 'miners' ? item.miner_name : item.name;
@@ -222,8 +266,12 @@ function renderInventory() {
         itemDiv.draggable = true;
 
         const img = document.createElement('img');
-        // Use image_path from CSV if available, otherwise construct from type
-        img.src = item.image_path ? `${IMAGES_BASE_URL}${item.image_path}` : `${IMAGES_BASE_URL}miners/default/${itemDiv.dataset.type}.png`; 
+        if (inventoryMode === 'miners') {
+            img.src = await getMinerImageUrl(item.miner_name); // Asynchronously get miner image URL
+        } else {
+            // Assuming rack images are in a specific subfolder or named simply
+            img.src = `${GITHUB_RAW_CONTENT_BASE}racks/${itemDiv.dataset.type}.png`; 
+        }
         img.alt = itemDiv.dataset.type;
         itemDiv.appendChild(img);
 
@@ -261,7 +309,7 @@ function renderInventory() {
         itemDiv.addEventListener('dragend', () => itemDiv.classList.remove('dragging-source'));
 
         inventoryItemsContainer.appendChild(itemDiv);
-    });
+    }
 }
 
 function updateSortDropdownOptions() {
@@ -316,7 +364,7 @@ function placeRack(placeholderElement, rackType) {
     placedRackDiv.dataset.type = rackType;
     placedRackDiv.style.width = '100%'; // Placed rack takes 100% of placeholder
     placedRackDiv.style.height = '100%';
-    placedRackDiv.style.backgroundImage = `url(${IMAGES_BASE_URL}rack_thumbnail.png)`; // Generic rack image
+    placedRackDiv.style.backgroundImage = `url(${GITHUB_RAW_CONTENT_BASE}rack_thumbnail.png)`; // Generic rack image
     placedRackDiv.style.backgroundSize = 'cover';
 
     // Store rack data
@@ -411,7 +459,7 @@ function placeRack(placeholderElement, rackType) {
     calculateTotalPower();
 }
 
-function placeMiner(slotElement, minerType, level = '1') {
+async function placeMiner(slotElement, minerType, level = '1') {
     if (placedMiners[slotElement.dataset.id]) {
         alert('A miner is already placed here. Remove it first.');
         return;
@@ -435,7 +483,7 @@ function placeMiner(slotElement, minerType, level = '1') {
     minerDiv.style.height = '100%';
 
     const img = document.createElement('img');
-    img.src = `${IMAGES_BASE_URL}${minerData.image_path}`; // Use the image_path from CSV
+    img.src = await getMinerImageUrl(minerType); // Asynchronously get miner image URL
     img.alt = minerType;
     img.classList.add('miner-thumbnail');
     minerDiv.appendChild(img);
@@ -580,7 +628,7 @@ function renderPlacedRack(placeholderElement, rackType) {
     placedRackDiv.dataset.type = rackType;
     placedRackDiv.style.width = '100%';
     placedRackDiv.style.height = '100%';
-    placedRackDiv.style.backgroundImage = `url(${IMAGES_BASE_URL}rack_thumbnail.png)`;
+    placedRackDiv.style.backgroundImage = `url(${GITHUB_RAW_CONTENT_BASE}rack_thumbnail.png)`;
     placedRackDiv.style.backgroundSize = 'cover';
 
     const activeConfig = rackConfig.configurations[rackConfig.current_active_config_type];
@@ -657,7 +705,7 @@ function renderPlacedRack(placeholderElement, rackType) {
 }
 
 // Helper function to re-render a placed miner after loading
-function renderPlacedMiner(slotElement, minerType, level) {
+async function renderPlacedMiner(slotElement, minerType, level) {
     const minerData = allMinersData.find(m => m.miner_name === minerType);
     if (!minerData) {
         console.error('Miner data not found for type:', minerType);
@@ -675,7 +723,7 @@ function renderPlacedMiner(slotElement, minerType, level) {
     minerDiv.style.height = '100%';
 
     const img = document.createElement('img');
-    img.src = `${IMAGES_BASE_URL}${minerData.image_path}`;
+    img.src = await getMinerImageUrl(minerType); // Asynchronously get miner image URL
     img.alt = minerType;
     img.classList.add('miner-thumbnail');
     minerDiv.appendChild(img);
@@ -694,7 +742,6 @@ function renderPlacedMiner(slotElement, minerType, level) {
 async function initialize() {
     try {
         roomsData = await fetch('Rooms.json').then(res => res.json());
-        // Load mock CSV data (replace with actual fetch later)
         allMinersData = await parseCSV(`${GITHUB_RAW_CONTENT_BASE}All_Miners.csv`);
         racksData = await parseCSV(`${GITHUB_RAW_CONTENT_BASE}Racks.csv`);
         setsData = await parseCSV(`${GITHUB_RAW_CONTENT_BASE}Sets.csv`);
