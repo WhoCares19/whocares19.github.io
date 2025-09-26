@@ -12,8 +12,10 @@ let placedRacks = {}; // Stores racks placed in rooms
 let placedMiners = {}; // Stores miners placed in racks
 
 // --- Constants for Image Paths ---
-const IMAGES_BASE_URL = './Images/'; // Base URL for miner and rack thumbnails
-const LEVELS_BASE_URL = './Levels/'; // Base URL for level images
+// Updated IMAGES_BASE_URL to point to your GitHub repository's raw content
+const GITHUB_RAW_CONTENT_BASE = 'https://raw.githubusercontent.com/WhoCares19/whocares19.github.io/main/';
+const IMAGES_BASE_URL = GITHUB_RAW_CONTENT_BASE;
+const LEVELS_BASE_URL = `${GITHUB_RAW_CONTENT_BASE}Levels/`;
 
 // --- Utility Functions ---
 
@@ -220,7 +222,8 @@ function renderInventory() {
         itemDiv.draggable = true;
 
         const img = document.createElement('img');
-        img.src = `${IMAGES_BASE_URL}${itemDiv.dataset.type}.png`; // Assuming image names match type
+        // Use image_path from CSV if available, otherwise construct from type
+        img.src = item.image_path ? `${IMAGES_BASE_URL}${item.image_path}` : `${IMAGES_BASE_URL}miners/default/${itemDiv.dataset.type}.png`; 
         img.alt = itemDiv.dataset.type;
         itemDiv.appendChild(img);
 
@@ -331,6 +334,7 @@ function placeRack(placeholderElement, rackType) {
             minerSlot.classList.add('miner-slot-container');
             minerSlot.dataset.id = `${placedRackDiv.dataset.id}-${slot.id}`; // Unique ID for miner slot
             minerSlot.dataset.isContainer = slot.is_container;
+            minerSlot.dataset.parentRackId = placedRackDiv.dataset.id; // Store parent rack ID
 
             // Position relative to the placed rack
             minerSlot.style.left = `${slot.x_ratio_rel * 100}%`;
@@ -351,7 +355,13 @@ function placeRack(placeholderElement, rackType) {
                 const selectedLevel = document.getElementById('level-dropdown').value;
                 const minerData = allMinersData.find(m => m.miner_name === minerType);
                 if (minerData) {
-                    placeMiner(minerSlot, minerType, selectedLevel);
+                    if (minerData.slot_size === "2_slot" && minerSlot.dataset.isContainer === "true") {
+                        placeMiner(minerSlot, minerType, selectedLevel);
+                    } else if (minerData.slot_size === "1_slot" && minerSlot.dataset.isContainer === "false") {
+                         placeMiner(minerSlot, minerType, selectedLevel);
+                    } else {
+                        alert(`A ${minerData.slot_size} miner cannot be placed in this slot type.`);
+                    }
                 }
             });
             placedRackDiv.appendChild(minerSlot);
@@ -363,6 +373,7 @@ function placeRack(placeholderElement, rackType) {
                     childMinerSlot.classList.add('miner-slot-container');
                     childMinerSlot.dataset.id = `${minerSlot.dataset.id}-${childSlot.id}`;
                     childMinerSlot.dataset.isContainer = false; // Child slots are typically not containers themselves
+                    childMinerSlot.dataset.parentRackId = placedRackDiv.dataset.id; // Store parent rack ID
 
                     // Position relative to its parent container slot
                     childMinerSlot.style.left = `${childSlot.x_ratio_rel_to_parent * 100}%`;
@@ -417,13 +428,14 @@ function placeMiner(slotElement, minerType, level = '1') {
     minerDiv.dataset.id = slotElement.dataset.id;
     minerDiv.dataset.type = minerType;
     minerDiv.dataset.level = level;
+    minerDiv.dataset.parentRackId = slotElement.dataset.parentRackId; // Inherit parent rack ID
 
     // Miner takes 100% of its slot
     minerDiv.style.width = '100%';
     minerDiv.style.height = '100%';
 
     const img = document.createElement('img');
-    img.src = `${IMAGES_BASE_URL}${minerType}.png`;
+    img.src = `${IMAGES_BASE_URL}${minerData.image_path}`; // Use the image_path from CSV
     img.alt = minerType;
     img.classList.add('miner-thumbnail');
     minerDiv.appendChild(img);
@@ -438,8 +450,15 @@ function placeMiner(slotElement, minerType, level = '1') {
     placedMiners[slotElement.dataset.id] = {
         type: minerType,
         level: level,
-        slot: slotElement.dataset.id
+        slot: slotElement.dataset.id,
+        parentRackId: slotElement.dataset.parentRackId
     };
+    
+    // Add to parent rack's miners for easier saving
+    if (placedMiners[slotElement.dataset.id].parentRackId && placedRacks[placedMiners[slotElement.dataset.id].parentRackId]) {
+        placedRacks[placedMiners[slotElement.dataset.id].parentRackId].miners[slotElement.dataset.id] = placedMiners[slotElement.dataset.id];
+    }
+
 
     slotElement.appendChild(minerDiv);
     calculateTotalPower();
@@ -450,7 +469,8 @@ function placeMiner(slotElement, minerType, level = '1') {
 
 document.getElementById('add-room-btn').addEventListener('click', () => {
     const newRoomId = `Room ${nextRoomId}`;
-    roomsData.rooms[newRoomId] = roomsData.rooms['Room 2']; // Clone Room 2 configuration
+    roomsData.rooms[newRoomId] = JSON.parse(JSON.stringify(roomsData.rooms['Room 2'])); // Deep clone Room 2 config
+    roomsData.active_room = newRoomId; // Set new room as active
     renderRoomSidebar();
     selectRoom(newRoomId); // Automatically select the new room
 });
@@ -506,13 +526,34 @@ document.getElementById('load-setup-input').addEventListener('change', async (ev
                 roomsData = loadedData.roomsConfig;
                 renderRoomSidebar(); // Re-render sidebar with loaded rooms
 
+                // Clear current display before loading new setup
+                document.getElementById('rack-placeholders-container').innerHTML = '';
+                placedRacks = {};
+                placedMiners = {};
+
                 // Restore placed racks and miners
-                placedRacks = loadedData.placedRacks;
-                placedMiners = loadedData.placedMiners;
+                placedRacks = loadedData.placedRacks || {};
+                placedMiners = loadedData.placedMiners || {};
 
                 // Select the previously active room and re-render its contents
                 if (loadedData.currentRoom && roomsData.rooms[loadedData.currentRoom]) {
                     selectRoom(loadedData.currentRoom);
+                    // Manually re-render placed racks and miners for the active room
+                    const activeRoomPlaceholders = document.getElementById('rack-placeholders-container').children;
+                    for (const phElement of activeRoomPlaceholders) {
+                        const rackId = phElement.dataset.id;
+                        if (placedRacks[rackId]) {
+                            renderPlacedRack(phElement, placedRacks[rackId].type);
+                            // Now render miners for this rack
+                            const rackSlots = phElement.querySelectorAll('.miner-slot-container');
+                            for (const slotElement of rackSlots) {
+                                const minerId = slotElement.dataset.id;
+                                if (placedMiners[minerId]) {
+                                    renderPlacedMiner(slotElement, placedMiners[minerId].type, placedMiners[minerId].level);
+                                }
+                            }
+                        }
+                    }
                 } else {
                     selectRoom('Room 1'); // Fallback
                 }
@@ -530,6 +571,123 @@ document.getElementById('load-setup-input').addEventListener('change', async (ev
     }
 });
 
+// Helper function to re-render a placed rack and its miners after loading
+function renderPlacedRack(placeholderElement, rackType) {
+    const rackConfig = JSON.parse(placeholderElement.dataset.rackConfig);
+    const placedRackDiv = document.createElement('div');
+    placedRackDiv.classList.add('placed-rack');
+    placedRackDiv.dataset.id = placeholderElement.dataset.id;
+    placedRackDiv.dataset.type = rackType;
+    placedRackDiv.style.width = '100%';
+    placedRackDiv.style.height = '100%';
+    placedRackDiv.style.backgroundImage = `url(${IMAGES_BASE_URL}rack_thumbnail.png)`;
+    placedRackDiv.style.backgroundSize = 'cover';
+
+    const activeConfig = rackConfig.configurations[rackConfig.current_active_config_type];
+    if (activeConfig && activeConfig.miner_slots) {
+        activeConfig.miner_slots.forEach(slot => {
+            const minerSlot = document.createElement('div');
+            minerSlot.classList.add('miner-slot-container');
+            minerSlot.dataset.id = `${placedRackDiv.dataset.id}-${slot.id}`;
+            minerSlot.dataset.isContainer = slot.is_container;
+            minerSlot.dataset.parentRackId = placedRackDiv.dataset.id;
+
+            minerSlot.style.left = `${slot.x_ratio_rel * 100}%`;
+            minerSlot.style.top = `${slot.y_ratio_rel * 100}%`;
+            minerSlot.style.width = `${slot.width_ratio_rel * 100}%`;
+            minerSlot.style.height = `${slot.height_ratio_rel * 100}%`;
+
+            // Add drop listeners (copy from placeRack)
+            minerSlot.addEventListener('dragover', (e) => { e.preventDefault(); minerSlot.classList.add('drag-over'); });
+            minerSlot.addEventListener('dragleave', () => minerSlot.classList.remove('drag-over'));
+            minerSlot.addEventListener('drop', (e) => {
+                e.preventDefault();
+                minerSlot.classList.remove('drag-over');
+                const minerType = e.dataTransfer.getData('text/plain');
+                const selectedLevel = document.getElementById('level-dropdown').value;
+                const minerData = allMinersData.find(m => m.miner_name === minerType);
+                if (minerData) {
+                    if (minerData.slot_size === "2_slot" && minerSlot.dataset.isContainer === "true") {
+                        placeMiner(minerSlot, minerType, selectedLevel);
+                    } else if (minerData.slot_size === "1_slot" && minerSlot.dataset.isContainer === "false") {
+                         placeMiner(minerSlot, minerType, selectedLevel);
+                    } else {
+                        alert(`A ${minerData.slot_size} miner cannot be placed in this slot type.`);
+                    }
+                }
+            });
+            placedRackDiv.appendChild(minerSlot);
+
+            if (slot.is_container && slot.child_slots) {
+                slot.child_slots.forEach(childSlot => {
+                    const childMinerSlot = document.createElement('div');
+                    childMinerSlot.classList.add('miner-slot-container');
+                    childMinerSlot.dataset.id = `${minerSlot.dataset.id}-${childSlot.id}`;
+                    childMinerSlot.dataset.isContainer = false;
+                    childMinerSlot.dataset.parentRackId = placedRackDiv.dataset.id;
+
+                    childMinerSlot.style.left = `${childSlot.x_ratio_rel_to_parent * 100}%`;
+                    childMinerSlot.style.top = `${childSlot.y_ratio_rel_to_parent * 100}%`;
+                    childMinerSlot.style.width = `${childSlot.width_ratio_rel_to_parent * 100}%`;
+                    childMinerSlot.style.height = `${childSlot.height_ratio_rel_to_parent * 100}%`;
+
+                    // Add drop listeners (copy from placeRack)
+                    childMinerSlot.addEventListener('dragover', (e) => { e.preventDefault(); childMinerSlot.classList.add('drag-over'); });
+                    childMinerSlot.addEventListener('dragleave', () => childMinerSlot.classList.remove('drag-over'));
+                    childMinerSlot.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        childMinerSlot.classList.remove('drag-over');
+                        const minerType = e.dataTransfer.getData('text/plain');
+                        const selectedLevel = document.getElementById('level-dropdown').value;
+                        const minerData = allMinersData.find(m => m.miner_name === minerType);
+                        if (minerData) {
+                            if (minerData.slot_size === "1_slot") {
+                                placeMiner(childMinerSlot, minerType, selectedLevel);
+                            } else {
+                                alert("This is a 1-slot only. A 2-slot miner cannot be placed here.");
+                            }
+                        }
+                    });
+                    minerSlot.appendChild(childMinerSlot);
+                });
+            }
+        });
+    }
+    placeholderElement.appendChild(placedRackDiv);
+}
+
+// Helper function to re-render a placed miner after loading
+function renderPlacedMiner(slotElement, minerType, level) {
+    const minerData = allMinersData.find(m => m.miner_name === minerType);
+    if (!minerData) {
+        console.error('Miner data not found for type:', minerType);
+        return;
+    }
+
+    const minerDiv = document.createElement('div');
+    minerDiv.classList.add('placed-miner');
+    minerDiv.dataset.id = slotElement.dataset.id;
+    minerDiv.dataset.type = minerType;
+    minerDiv.dataset.level = level;
+    minerDiv.dataset.parentRackId = slotElement.dataset.parentRackId;
+
+    minerDiv.style.width = '100%';
+    minerDiv.style.height = '100%';
+
+    const img = document.createElement('img');
+    img.src = `${IMAGES_BASE_URL}${minerData.image_path}`;
+    img.alt = minerType;
+    img.classList.add('miner-thumbnail');
+    minerDiv.appendChild(img);
+
+    const levelOverlay = document.createElement('div');
+    levelOverlay.classList.add('miner-level-overlay');
+    levelOverlay.style.backgroundImage = `url(${LEVELS_BASE_URL}lvl${level}.png)`;
+    minerDiv.appendChild(levelOverlay);
+
+    slotElement.appendChild(minerDiv);
+}
+
 
 // --- Initialization ---
 
@@ -537,9 +695,9 @@ async function initialize() {
     try {
         roomsData = await fetch('Rooms.json').then(res => res.json());
         // Load mock CSV data (replace with actual fetch later)
-        allMinersData = await parseCSV('All_Miners.csv');
-        racksData = await parseCSV('Racks.csv');
-        setsData = await parseCSV('Sets.csv');
+        allMinersData = await parseCSV(`${GITHUB_RAW_CONTENT_BASE}All_Miners.csv`);
+        racksData = await parseCSV(`${GITHUB_RAW_CONTENT_BASE}Racks.csv`);
+        setsData = await parseCSV(`${GITHUB_RAW_CONTENT_BASE}Sets.csv`);
 
         // Populate initial rooms in sidebar
         renderRoomSidebar();
@@ -561,7 +719,7 @@ async function initialize() {
 
     } catch (error) {
         console.error('Error during initialization:', error);
-        alert('Failed to load application data.');
+        alert('Failed to load application data. Please check console for details.');
     }
 }
 
