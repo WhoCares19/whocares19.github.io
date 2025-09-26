@@ -1,0 +1,330 @@
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    overflow: hidden; /* Prevent scrollbars from appearing due to draggable elements */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background-color: #f0f0f0;
+}
+
+#main-container {
+    display: flex;
+    flex-wrap: wrap; /* Allows inventory to wrap below on smaller screens */
+    width: 100vw;
+    height: 100vh;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+}
+
+#left-sidebar {
+    flex: 0 0 200px; /* Fixed width for sidebar */
+    background-color: #333;
+    color: white;
+    padding: 10px;
+    box-sizing: border-box;
+    overflow-y: auto; /* Scrollable if content overflows */
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.sidebar-section {
+    border-bottom: 1px solid #555;
+    padding-bottom: 10px;
+}
+
+.sidebar-section:last-child {
+    border-bottom: none;
+}
+
+.room-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    padding: 5px 0;
+}
+
+.room-header:hover {
+    background-color: #555;
+}
+
+.room-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding-left: 15px;
+    margin-top: 5px;
+}
+
+.room-buttons button {
+    background-color: #5cb85c;
+    color: white;
+    border: none;
+    padding: 8px;
+    cursor: pointer;
+    border-radius: 3px;
+}
+
+.room-buttons button:hover {
+    background-color: #4cae4c;
+}
+
+#add-room-btn,
+#show-miners-btn,
+#show-racks-btn,
+#save-setup-btn,
+#load-setup-btn {
+    width: 100%;
+    padding: 10px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1em;
+}
+
+#add-room-btn:hover,
+#show-miners-btn:hover,
+#show-racks-btn:hover,
+#save-setup-btn:hover,
+#load-setup-btn:hover {
+    background-color: #0056b3;
+}
+
+#room-display {
+    flex: 1; /* Takes remaining space horizontally */
+    background-color: #eee;
+    position: relative;
+    overflow: hidden; /* Crucial for positioning children */
+    box-sizing: border-box;
+    display: flex; /* Use flex to center the background image */
+    justify-content: center;
+    align-items: center;
+    min-width: 600px; /* Minimum width for room display */
+}
+
+#room-background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Ensures background covers the area */
+    z-index: 0;
+}
+
+#rack-placeholders-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1; /* Racks on top of background */
+    box-sizing: border-box;
+}
+
+.rack-placeholder {
+    position: absolute;
+    border: 1px dashed rgba(255, 255, 255, 0.5); /* Dashed border for placeholders */
+    background-color: rgba(0, 0, 0, 0.3); /* Semi-transparent background */
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    align-items: center;
+    transition: all 0.1s ease-in-out; /* Smooth transition for drag-over effect */
+}
+
+.rack-placeholder.drag-over {
+    border-color: #28a745; /* Highlight on drag over */
+    background-color: rgba(40, 167, 69, 0.3);
+}
+
+
+/* Styling for a placed rack */
+.placed-rack {
+    position: absolute;
+    border: 1px solid #555;
+    background-color: #777;
+    box-sizing: border-box;
+    cursor: grab;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start; /* Align slots to the top */
+    align-items: center;
+    color: white;
+    font-size: 0.8em;
+    overflow: hidden; /* Contain child slots */
+}
+
+.placed-rack.dragging {
+    cursor: grabbing;
+    opacity: 0.7;
+}
+
+.miner-slot-container {
+    position: absolute; /* Relative to its parent rack */
+    border: 1px dashed rgba(255, 255, 255, 0.4);
+    background-color: rgba(0, 0, 0, 0.2);
+    box-sizing: border-box;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    overflow: hidden;
+}
+
+.miner-slot-container.drag-over {
+    border-color: #ffc107; /* Highlight for miner drag over */
+    background-color: rgba(255, 193, 7, 0.3);
+}
+
+/* Styling for actual miners inside slots */
+.placed-miner {
+    position: absolute; /* Position within its slot or container */
+    background-color: #000;
+    color: white;
+    text-align: center;
+    box-sizing: border-box;
+    cursor: grab;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid #888;
+    overflow: hidden;
+    font-size: 0.7em;
+}
+
+.placed-miner.dragging {
+    cursor: grabbing;
+    opacity: 0.7;
+}
+
+.miner-thumbnail {
+    width: 80%; /* Adjust as needed */
+    height: 80%;
+    object-fit: contain;
+}
+
+.miner-level-overlay {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 20px; /* Size of level image */
+    height: 20px;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+
+#inventory-container {
+    flex: 0 0 100%; /* Takes full width at the bottom */
+    height: 250px; /* Fixed height for inventory */
+    background-color: #444;
+    color: white;
+    padding: 10px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    min-width: 0; /* Allow inventory to shrink */
+}
+
+#inventory-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+#search-bar, #sort-dropdown, #level-dropdown {
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #666;
+    background-color: #555;
+    color: white;
+}
+
+#inventory-items {
+    flex-grow: 1; /* Takes remaining vertical space */
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    overflow-y: auto; /* Scrollable inventory */
+    align-content: flex-start; /* Align items to the start of the container */
+}
+
+.inventory-item {
+    width: 120px; /* Fixed width for inventory item */
+    height: 150px; /* Fixed height */
+    border: 1px solid #666;
+    border-radius: 5px;
+    background-color: #333;
+    text-align: center;
+    padding: 5px;
+    box-sizing: border-box;
+    cursor: grab;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    font-size: 0.8em;
+    overflow: hidden; /* Ensure content doesn't spill out */
+    transition: transform 0.1s ease-in-out;
+}
+
+.inventory-item.dragging {
+    opacity: 0.7;
+    transform: scale(1.05);
+}
+
+.inventory-item img {
+    max-width: 70px;
+    max-height: 70px;
+    object-fit: contain;
+    margin-bottom: 5px;
+}
+
+/* Specific styling for drag and drop feedback */
+.dragging-source {
+    opacity: 0.4;
+    border: 2px dashed #007bff;
+}
+
+/* Adjust main container for smaller screens */
+@media (max-width: 1024px) {
+    #main-container {
+        flex-direction: column;
+    }
+    #left-sidebar {
+        flex: 0 0 auto; /* Sidebar height will adjust to content */
+        width: 100%;
+        max-height: 200px; /* Limit sidebar height when stacked */
+    }
+    #room-display {
+        flex: 1; /* Room display takes available height */
+        width: 100%;
+        min-height: 300px; /* Ensure room display is visible */
+    }
+    #inventory-container {
+        flex: 0 0 auto; /* Inventory height will adjust */
+        width: 100%;
+        max-height: 200px; /* Limit inventory height when stacked */
+    }
+}
+
+/* Even smaller screens */
+@media (max-width: 768px) {
+    #left-sidebar, #inventory-container {
+        max-height: 150px;
+    }
+    #inventory-controls {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
